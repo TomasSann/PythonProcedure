@@ -1,0 +1,6 @@
+pandas
+numpy
+scikit-learn
+snowflake-connector-python
+XlsxWriter
+requests
