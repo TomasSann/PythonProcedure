@@ -7,23 +7,20 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 
-
-# =========================
-#  CONFIG DESDE SECRETS
-# =========================
+# ====== SECRETS ======
 SF_USER     = os.environ["SNOWFLAKE_USER"]
 SF_PASSWORD = os.environ["SNOWFLAKE_PASSWORD"]
-SF_ACCOUNT  = os.environ["SNOWFLAKE_ACCOUNT"]      # ej: "isapre_colmena.us-east-1"
+SF_ACCOUNT  = os.environ["SNOWFLAKE_ACCOUNT"]
 SF_DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "DTM")
 SF_SCHEMA   = os.environ.get("SNOWFLAKE_SCHEMA", "P_STG_DTM_EHV")
-SF_WAREHOUSE= os.environ.get("SNOWFLAKE_WAREHOUSE")   # puede ser obligatorio en tu cuenta
+SF_WAREHOUSE= os.environ.get("SNOWFLAKE_WAREHOUSE")   # si tu cuenta lo exige
 SF_ROLE     = os.environ.get("SNOWFLAKE_ROLE")        # opcional
 
 MAIL_FROM   = os.environ["MAIL_FROM"]
 MAIL_TO     = os.environ["MAIL_TO"]
 OUTLOOK_APP_PASSWORD = os.environ["OUTLOOK_APP_PASSWORD"]
 
-
+# ====== TU QUERY (tal cual la pasaste) ======
 QUERY = """
 SELECT
 ALFILDIARIO.*,
@@ -83,7 +80,7 @@ CASE
          AND RESOLUCION_PRIMERA <> 'AUTORIZADA'
          THEN 'Error Tipo II'
     WHEN alfildiario.diassolicitado > 10
-         AND alfildiario.diassolicitado <> 'AUTORIZADA'
+         AND RESOLUCION_PRIMERA <> 'AUTORIZADA'
          THEN 'Error Tipo III'
     WHEN RESOLUCION_PRIMERA = 'AUTORIZADA'
          THEN 'No hay error'
@@ -102,15 +99,17 @@ left join (
             from LCC.P_RDV_DST_LND_SYB.LCCREC
             left join LCC.P_RDV_DST_LND_SYB.LICCAUMOD caumod on caumod."COD_CAUMOD" = "lcc_vismod"
             where 1=1
+           --  and "lcc_idn" = '20220619704'
+           --  and   rn = 1
               group by "lcc_idn","lcc_visjus", "lcc_visdigfec","lcc_vismod","GLS_CAUMOD","GLS_CAUMOD2"
             ) lccrec on lccrec."lcc_idn" =  bl.BL_PRIMER_FOLIO and rnum = 1
     LEFT  JOIN  "LCC"."P_RDV_DST_LND_SYB"."LCC" lcc ON lcc."lcc_idn"= bl.BL_PRIMER_FOLIO
     left join LCC.P_RDV_DST_LND_SYB.LICCAUMOD caumod_lcc on caumod_lcc."COD_CAUMOD" = lcc."lcc_vismod"
     WHERE 
     1=1
+    -- and ALFILDIARIO.fecha_recepcion < CURRENT_DATE()-2
 ;
 """
-
 
 def connect_to_snowflake():
     try:
@@ -127,35 +126,28 @@ def connect_to_snowflake():
         print("✅ Conexión a Snowflake OK")
         return conn
     except Exception as e:
-        # MOSTRAR EL ERROR REAL
         print("❌ Error conectando a Snowflake:", str(e))
         return None
-
 
 def fetch_dataframe(sql: str) -> pd.DataFrame:
     conn = connect_to_snowflake()
     if conn is None:
-        # si llegamos aquí es porque faltó un secret o un dato de Snowflake
-        raise RuntimeError("No se pudo conectar a Snowflake. Revisa los Secrets (account, user, password, warehouse).")
-
+        raise RuntimeError("No se pudo conectar a Snowflake. Revisa los secrets.")
     cur = None
     try:
         cur = conn.cursor()
         cur.execute(sql)
         cols = [d[0] for d in cur.description]
         rows = cur.fetchall()
-        df = pd.DataFrame(rows, columns=cols)
-        return df
+        return pd.DataFrame(rows, columns=cols)
     finally:
         if cur is not None:
             cur.close()
         conn.close()
 
-
 def save_excel(df: pd.DataFrame, path: str):
     with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False, sheet_name="datos")
-
 
 def send_email_outlook(subject: str, content_text: str, attachment_path: str = None):
     smtp_server = "smtp.office365.com"
@@ -180,7 +172,6 @@ def send_email_outlook(subject: str, content_text: str, attachment_path: str = N
 
     print("📧 Correo enviado desde Outlook.")
 
-
 def main():
     print("Descargando datos de Snowflake…")
     df = fetch_dataframe(QUERY)
@@ -194,7 +185,6 @@ def main():
     subject = f"Reporte Snowflake {ts}"
     body = f"Adjunto el reporte generado automáticamente. Total filas: {len(df)}."
     send_email_outlook(subject, body, excel_name)
-
 
 if __name__ == "__main__":
     main()
