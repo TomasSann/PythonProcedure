@@ -16,15 +16,14 @@ SF_PASSWORD = os.environ["SNOWFLAKE_PASSWORD"]
 SF_ACCOUNT  = os.environ["SNOWFLAKE_ACCOUNT"]      # ej: "isapre_colmena.us-east-1"
 SF_DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "DTM")
 SF_SCHEMA   = os.environ.get("SNOWFLAKE_SCHEMA", "P_STG_DTM_EHV")
+SF_WAREHOUSE= os.environ.get("SNOWFLAKE_WAREHOUSE")   # puede ser obligatorio en tu cuenta
+SF_ROLE     = os.environ.get("SNOWFLAKE_ROLE")        # opcional
 
-MAIL_FROM   = os.environ["MAIL_FROM"]  # tu correo outlook
-MAIL_TO     = os.environ["MAIL_TO"]    # destino
-OUTLOOK_APP_PASSWORD = os.environ["OUTLOOK_APP_PASSWORD"]  # contraseña de app outlook
+MAIL_FROM   = os.environ["MAIL_FROM"]
+MAIL_TO     = os.environ["MAIL_TO"]
+OUTLOOK_APP_PASSWORD = os.environ["OUTLOOK_APP_PASSWORD"]
 
 
-# =========================
-#  TU QUERY A SNOWFLAKE
-# =========================
 QUERY = """
 SELECT
 ALFILDIARIO.*,
@@ -84,7 +83,7 @@ CASE
          AND RESOLUCION_PRIMERA <> 'AUTORIZADA'
          THEN 'Error Tipo II'
     WHEN alfildiario.diassolicitado > 10
-         AND RESOLUCION_PRIMERA <> 'AUTORIZADA'
+         AND alfildiario.diassolicitado <> 'AUTORIZADA'
          THEN 'Error Tipo III'
     WHEN RESOLUCION_PRIMERA = 'AUTORIZADA'
          THEN 'No hay error'
@@ -113,20 +112,33 @@ left join (
 """
 
 
-# =========================
-#  FUNCIONES
-# =========================
 def connect_to_snowflake():
-    conn = snowflake.connector.connect(
-        user=SF_USER,
-        password=SF_PASSWORD,
-        account=SF_ACCOUNT,
-        database=SF_DATABASE,
-        schema=SF_SCHEMA,
-    )
+    try:
+        print("Conectando a Snowflake...")
+        conn = snowflake.connector.connect(
+            user=SF_USER,
+            password=SF_PASSWORD,
+            account=SF_ACCOUNT,
+            database=SF_DATABASE,
+            schema=SF_SCHEMA,
+            warehouse=SF_WAREHOUSE,
+            role=SF_ROLE,
+        )
+        print("✅ Conexión a Snowflake OK")
+        return conn
+    except Exception as e:
+        # MOSTRAR EL ERROR REAL
+        print("❌ Error conectando a Snowflake:", str(e))
+        return None
+
 
 def fetch_dataframe(sql: str) -> pd.DataFrame:
     conn = connect_to_snowflake()
+    if conn is None:
+        # si llegamos aquí es porque faltó un secret o un dato de Snowflake
+        raise RuntimeError("No se pudo conectar a Snowflake. Revisa los Secrets (account, user, password, warehouse).")
+
+    cur = None
     try:
         cur = conn.cursor()
         cur.execute(sql)
@@ -135,15 +147,12 @@ def fetch_dataframe(sql: str) -> pd.DataFrame:
         df = pd.DataFrame(rows, columns=cols)
         return df
     finally:
-        try:
+        if cur is not None:
             cur.close()
-        except:
-            pass
         conn.close()
 
 
 def save_excel(df: pd.DataFrame, path: str):
-    # usamos XlsxWriter para que funcione bien en GitHub Actions
     with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False, sheet_name="datos")
 
@@ -156,7 +165,6 @@ def send_email_outlook(subject: str, content_text: str, attachment_path: str = N
     msg["From"] = MAIL_FROM
     msg["To"] = MAIL_TO
     msg["Subject"] = subject
-
     msg.attach(MIMEText(content_text, "plain"))
 
     if attachment_path:
@@ -170,7 +178,7 @@ def send_email_outlook(subject: str, content_text: str, attachment_path: str = N
         server.login(MAIL_FROM, OUTLOOK_APP_PASSWORD)
         server.send_message(msg)
 
-    print("Correo enviado exitosamente desde Outlook.")
+    print("📧 Correo enviado desde Outlook.")
 
 
 def main():
@@ -190,4 +198,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
