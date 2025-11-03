@@ -16,8 +16,6 @@ SF_PASSWORD = os.environ["SNOWFLAKE_PASSWORD"]
 SF_ACCOUNT  = os.environ["SNOWFLAKE_ACCOUNT"]      # ej: "isapre_colmena.us-east-1"
 SF_DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "DTM")
 SF_SCHEMA   = os.environ.get("SNOWFLAKE_SCHEMA", "P_STG_DTM_EHV")
-SF_WAREHOUSE= os.environ.get("SNOWFLAKE_WAREHOUSE")   # opcional
-SF_ROLE     = os.environ.get("SNOWFLAKE_ROLE")        # opcional
 
 MAIL_FROM   = os.environ["MAIL_FROM"]  # tu correo outlook
 MAIL_TO     = os.environ["MAIL_TO"]    # destino
@@ -125,11 +123,7 @@ def connect_to_snowflake():
         account=SF_ACCOUNT,
         database=SF_DATABASE,
         schema=SF_SCHEMA,
-        warehouse=SF_WAREHOUSE,
-        role=SF_ROLE,
     )
-    return conn
-
 
 def fetch_dataframe(sql: str) -> pd.DataFrame:
     conn = connect_to_snowflake()
@@ -196,3 +190,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
