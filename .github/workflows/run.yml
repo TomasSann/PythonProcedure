@@ -3,6 +3,7 @@ name: Ejecutar y enviar reporte Snowflake
 on:
   schedule:
     - cron: "0 11 * * *"  # 08:00 America/Santiago cuando Chile está en UTC-3
+    - cron: "0 17 * * *"  # 14:00 America/Santiago cuando Chile está en UTC-3
     # - cron: "0 12 * * *"  # 08:00 America/Santiago cuando Chile está en UTC-4
   workflow_dispatch: {}    # para ejecutarlo manualmente desde Actions
 
