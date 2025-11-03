@@ -7,20 +7,20 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 
-# ====== SECRETS ======
+# ====== SNOWFLAKE ======
 SF_USER     = os.environ["SNOWFLAKE_USER"]
 SF_PASSWORD = os.environ["SNOWFLAKE_PASSWORD"]
 SF_ACCOUNT  = os.environ["SNOWFLAKE_ACCOUNT"]
 SF_DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "DTM")
 SF_SCHEMA   = os.environ.get("SNOWFLAKE_SCHEMA", "P_STG_DTM_EHV")
-SF_WAREHOUSE= os.environ.get("SNOWFLAKE_WAREHOUSE")   # si tu cuenta lo exige
-SF_ROLE     = os.environ.get("SNOWFLAKE_ROLE")        # opcional
+SF_WAREHOUSE= os.environ.get("SNOWFLAKE_WAREHOUSE")
+SF_ROLE     = os.environ.get("SNOWFLAKE_ROLE")
 
-MAIL_FROM   = os.environ["MAIL_FROM"]
-MAIL_TO     = os.environ["MAIL_TO"]
-OUTLOOK_APP_PASSWORD = os.environ["OUTLOOK_APP_PASSWORD"]
+# ====== GMAIL ======
+MAIL_FROM         = os.environ["MAIL_FROM"]        # tu gmail
+MAIL_TO           = os.environ["MAIL_TO"]          # destinatario
+GMAIL_APP_PASSWORD= os.environ["GMAIL_APP_PASSWORD"]
 
-# ====== TU QUERY (tal cual la pasaste) ======
 QUERY = """
 SELECT
 ALFILDIARIO.*,
@@ -99,58 +99,45 @@ left join (
             from LCC.P_RDV_DST_LND_SYB.LCCREC
             left join LCC.P_RDV_DST_LND_SYB.LICCAUMOD caumod on caumod."COD_CAUMOD" = "lcc_vismod"
             where 1=1
-           --  and "lcc_idn" = '20220619704'
-           --  and   rn = 1
               group by "lcc_idn","lcc_visjus", "lcc_visdigfec","lcc_vismod","GLS_CAUMOD","GLS_CAUMOD2"
             ) lccrec on lccrec."lcc_idn" =  bl.BL_PRIMER_FOLIO and rnum = 1
     LEFT  JOIN  "LCC"."P_RDV_DST_LND_SYB"."LCC" lcc ON lcc."lcc_idn"= bl.BL_PRIMER_FOLIO
     left join LCC.P_RDV_DST_LND_SYB.LICCAUMOD caumod_lcc on caumod_lcc."COD_CAUMOD" = lcc."lcc_vismod"
     WHERE 
     1=1
-    -- and ALFILDIARIO.fecha_recepcion < CURRENT_DATE()-2
 ;
 """
 
 def connect_to_snowflake():
-    try:
-        print("Conectando a Snowflake...")
-        conn = snowflake.connector.connect(
-            user=SF_USER,
-            password=SF_PASSWORD,
-            account=SF_ACCOUNT,
-            database=SF_DATABASE,
-            schema=SF_SCHEMA,
-            warehouse=SF_WAREHOUSE,
-            role=SF_ROLE,
-        )
-        print("✅ Conexión a Snowflake OK")
-        return conn
-    except Exception as e:
-        print("❌ Error conectando a Snowflake:", str(e))
-        return None
+    print("Conectando a Snowflake...")
+    conn = snowflake.connector.connect(
+        user=SF_USER,
+        password=SF_PASSWORD,
+        account=SF_ACCOUNT,
+        database=SF_DATABASE,
+        schema=SF_SCHEMA,
+        warehouse=SF_WAREHOUSE,
+        role=SF_ROLE,
+    )
+    print("✅ Conexión a Snowflake OK")
+    return conn
 
 def fetch_dataframe(sql: str) -> pd.DataFrame:
     conn = connect_to_snowflake()
-    if conn is None:
-        raise RuntimeError("No se pudo conectar a Snowflake. Revisa los secrets.")
-    cur = None
-    try:
-        cur = conn.cursor()
-        cur.execute(sql)
-        cols = [d[0] for d in cur.description]
-        rows = cur.fetchall()
-        return pd.DataFrame(rows, columns=cols)
-    finally:
-        if cur is not None:
-            cur.close()
-        conn.close()
+    cur = conn.cursor()
+    cur.execute(sql)
+    cols = [d[0] for d in cur.description]
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return pd.DataFrame(rows, columns=cols)
 
 def save_excel(df: pd.DataFrame, path: str):
     with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False, sheet_name="datos")
 
-def send_email_outlook(subject: str, content_text: str, attachment_path: str = None):
-    smtp_server = "smtp.office365.com"
+def send_email_gmail(subject: str, content_text: str, attachment_path: str = None):
+    smtp_server = "smtp.gmail.com"
     smtp_port = 587
 
     msg = MIMEMultipart()
@@ -167,10 +154,10 @@ def send_email_outlook(subject: str, content_text: str, attachment_path: str = N
 
     with smtplib.SMTP(smtp_server, smtp_port) as server:
         server.starttls()
-        server.login(MAIL_FROM, OUTLOOK_APP_PASSWORD)
+        server.login(MAIL_FROM, GMAIL_APP_PASSWORD)
         server.send_message(msg)
 
-    print("📧 Correo enviado desde Outlook.")
+    print("📧 Correo enviado por Gmail.")
 
 def main():
     print("Descargando datos de Snowflake…")
@@ -184,7 +171,7 @@ def main():
 
     subject = f"Reporte Snowflake {ts}"
     body = f"Adjunto el reporte generado automáticamente. Total filas: {len(df)}."
-    send_email_outlook(subject, body, excel_name)
+    send_email_gmail(subject, body, excel_name)
 
 if __name__ == "__main__":
     main()
